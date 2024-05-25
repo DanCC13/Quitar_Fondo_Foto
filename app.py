@@ -1,4 +1,4 @@
-# Version 1.5. Desarrollado por Daniel Campana y Joaquín Pozo
+# Version 1.6 Desarrollado por Daniel Campana y Joaquín Pozo
 # Version 1.3. Desarrollado por Natalia Escudero y Angela Anhuamán
 # Innovaciones: Soporte para subir múltiples archivos o carpetas, descarga individual o en archivo comprimido (.zip).
 # Trabajas 
