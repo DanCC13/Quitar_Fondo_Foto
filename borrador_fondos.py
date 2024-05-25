@@ -1,12 +1,12 @@
-# Version 1.5. Desarrollado por Daniel Campana y Joaquín Pozo
+# Version 1.6 Desarrollado por Daniel Campana y Joaquín Pozo
 # Version 1.3. Desarrollado por Natalia Escudero y Angela Anhuamán
 # Innovaciones: Soporte para subir múltiples archivos o carpetas, descarga individual o en archivo comprimido (.zip).
-# El script trabaja unicamente con archivos que pertenezcan a un formato de imagen.
+# Trabajas 
 
 # -------------------------------------------------- Importacion de librerias --------------------------------------------------
 
 import streamlit as st
-from rembg import remove
+from rembg import remove, new_session
 from PIL import Image
 from io import BytesIO
 import zipfile
@@ -15,6 +15,8 @@ from tkinter import filedialog
 import os
 
 # -------------------------------------------------- Codigo Principal --------------------------------------------------
+session = new_session("u2net_human_seg") # Define que modelo de IA se va a utilizar
+
 def create_zip_file(images, zip_filename, names): # Funcion que crea un archivo .zip.
     # Parametros: images (Lista de imagenes), zip_filename (Nombre para el archivo), names(Lista con los nombres de los archivos a incluir)
     
@@ -60,11 +62,33 @@ def img_remover(files, set, dirname, dpi): # Funcion que quita el fondo de las i
     # Parametros: files (Archivo o archivos subidos), set (1 si es para archivos, 0 si es para carpetas)
     names = [] # Lista que contendra los nombres de los archivos
     images = [] # Lista que almacenara las imagenes editadas
+    total_files = [] #Lista en set == '1' la cual almacenará todas las imágenes
 
     if set == '0':
-        files = [file for file in os.listdir(dirname) if (file.endswith('.png') or file.endswith('.jpg') or file.endswith('.jpeg') or file.endswith('.tif') or file.endswith('.webp'))] # Selecciona solo los documentos que contengan el formato de imagen aceptado
-
-    for file in files: # Se ejecuta archivo por archivo
+        for root, dirs, files in os.walk(dirname): # Busca dentro de la carpeta todas las subcarpetas y subcarpetas dentro de esta y se ejecuta por cada una
+            for file in files: # Por cada archivo encontrado
+                if file.endswith(('.png', '.jpg', '.jpeg', '.jfif', '.tif', '.webp')): # Comprueba que el archivo sea del formato aceptado
+                    total_files.append(os.path.join(root, file)) # Si el archivo es compatible, lo anexa al folder de imagenes a editar
+    else: # Si se selecciono un archivo
+        for file in files: # Primero se recorre por toda la lista para encontrar archivos .zip
+            if file.name.endswith('.zip'): # Si se encuentra
+                with zipfile.ZipFile(file) as z:
+                    # Se obtiene la lista de nombres
+                    file_names = z.namelist()
+                    # Se filtran solo los archivos deseados
+                    for file_name in file_names:
+                        if file_name.endswith(('.png', '.jpg', '.jpeg', '.jfif', '.tif', '.webp')): # Comprueba que el archivo sea del formato aceptado
+                            with z.open(file_name) as img_file:
+                                img_bytes = BytesIO(img_file.read()) # Se guarda el archivo
+                                img_bytes.name = file_name  # Agregamos nombre del archivo
+                                total_files.append(img_bytes) # Se guarda el archivo en la lista
+            else:
+                # Los archivos de imagen simplemente se guardan 
+                img_bytes = BytesIO(file.read())
+                img_bytes.name = file.name  # Agregar el nombre del archivo como atributo
+                total_files.append(img_bytes)
+          
+    for file in total_files: # Se ejecuta archivo por archivo
         if set == '1':
             img = Image.open(file) # Si se sube un archivo o archivos, se abre solo con el nombre del archivo
             names.append(file.name.split(".")[0] + '.png') # Se incluye en nombre del archivo
@@ -72,33 +96,25 @@ def img_remover(files, set, dirname, dpi): # Funcion que quita el fondo de las i
             path = os.path.join(dirname, file) # Si se sube una carpeta, se define la ruta de los archivos
             img = Image.open(path) # Se abren los archivos
             names.append(file.split(".")[0] + '.png')  # Se incluye en nombre del archivo
-        img2 = remove(img, bgcolor=(255,255,255,255)) # Remueve el fondo de la imagen
+        img2 = remove(img, bgcolor=(255,255,255,255), session=session) # Remueve el fondo de la imagen
 
     # Ajustando el tamaño simétricamente con las dimensiones específicas
        # Desempaquetar los valores devueltos por resize_image
         resized_img, new_width, new_height = resize_image(img2, 244, 288)
 
-        # Reemplazar img3 con la imagen redimensionada
+    # Reemplazar img3 con la imagen redimensionada
         img3 = resized_img
-    # Tamaño del archivo
 
+    # Tamaño del archivo
         quality = 95
         max_size_kb = 50 * 1024  #Resolucion de 50kB
-
-        while True:
-            img_bytes = BytesIO()
-            img3.save(img_bytes, format='PNG', quality=quality, dpi=(dpi, dpi))
-            size_kb = len(img_bytes.getvalue()) / 1024
-            if size_kb <= max_size_kb or quality <= 0:
-                break
-            quality -= 5
             
         images.append(img3) # Se adiciona la imagen creada a la lista de imagenes 
         st.image(img3) # Muestra la imagen en la interfaz
         buf = BytesIO() # Objeto que permite almacenar el contenido de las imagenes
         img3.save(buf, format='png') # Guardar las imagenes en formato .png
 
-    if len(files) == 1:
+    if len(total_files) == 1:
         st.download_button("Descargar", data=buf, file_name=names[0], mime="image/png") # Si la imagen solo es una se descarga directamente
     else: # Si es mas de una imagen se descarga en un archivo .zip
         # Parte ZIP
@@ -112,10 +128,11 @@ def img_remover(files, set, dirname, dpi): # Funcion que quita el fondo de las i
             label="Descargar Archivo ZIP", data=zip_data, file_name=zip_filename, mime="application/zip"
         ) # Muestra en la interfaz un boton para descargar el archivo en un .zip
 
+
 def main():
     try:
         st.title("Quitar fondo") # Titulo del programa
-        files = st.file_uploader("Seleccione una o varias imagenes", accept_multiple_files=True, type=["png","jpg","jpeg", "tif", "webp"]) # Crea un boton para subir uno o varios archivos
+        files = st.file_uploader("Seleccione una o varias imagenes", accept_multiple_files=True, type=["png","jpg","jpeg", "tif", "webp", "zip"]) # Crea un boton para subir uno o varios archivos
         st.write("O seleccione una carpeta")# Da la opcion de subir una carpeta entera
         root = tk.Tk() # Crea una ventana en Tkinter (No se puede adjuntar en Streamlit carpetas enteras, asi que este es un metodo para lograrlo)
         root.withdraw() # Oculta la ventana
@@ -124,16 +141,10 @@ def main():
     except ValueError:
         print('No se pudo cargar el Streamlit correctamente') # Manejo de errores
     if files:
-        try:
-            img_remover(files, '1', None, 300) # Abrir los archivos y ejecutar las funcion segun los parametros necesarios
-        except ValueError:
-            print('Error mientras se editaba la imagen') # Manejo de errores
+        img_remover(files, '1', None, 300) # Abrir los archivos y ejecutar las funcion segun los parametros necesarios
     elif boton_carpeta:
-        try:
-            dirname = str(filedialog.askdirectory(master=root)) # Obtener la ruta de la carpeta subida
-            img_remover(os.listdir(dirname), '0', dirname, 300) # Abrir la carpeta y ejecutar las funcion segun los parametros necesarios
-        except ValueError:
-            print('Error mientras se editaba la imagen') # Manejo de errores
+        dirname = str(filedialog.askdirectory(master=root)) # Obtener la ruta de la carpeta subida
+        img_remover(os.listdir(dirname), '0', dirname, 300) # Abrir la carpeta y ejecutar las funcion segun los parametros necesario
 
 if __name__ == "__main__":
     main()
